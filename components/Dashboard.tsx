@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { CurrencyType, Transaction, Goal, RecurringPayment } from '../types';
 import { fromBase, toBase, formatCurrency } from '../utils/currency';
 import { translations, Language } from '../i18n';
@@ -9,7 +9,6 @@ import GoalForm from './GoalForm';
 import RecurringForm from './RecurringForm';
 import FriendTab from './FriendTab';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
-import { GoogleGenAI } from "@google/genai";
 
 interface DashboardProps {
   user: { username: string };
@@ -33,7 +32,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, lang, setLang }) 
   const [showModal, setShowModal] = useState<'earn' | 'spend' | 'goal' | 'edit_goal' | 'edit_tx' | 'recurring' | null>(null);
   const [activeTxId, setActiveTxId] = useState<string | null>(null);
   const [activeGoalId, setActiveGoalId] = useState<string | null>(null);
-  const [aiInsight, setAiInsight] = useState<string>('');
 
   const stats = useMemo(() => {
     const totalEarned = transactions.filter(t => t.type === 'earn').reduce((acc, t) => acc + t.amount, 0);
@@ -49,28 +47,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, lang, setLang }) 
     const rank = RANKS[Math.min(currentTier, RANKS.length - 1)];
     return { totalEarned, totalSpent, balance, streak, currentTier, progress, rank, nextThreshold };
   }, [transactions]);
-
-  // AI Insight Generator
-  useEffect(() => {
-    const fetchAiInsight = async () => {
-      if (transactions.length < 3) {
-        setAiInsight(lang === 'sr' ? "Unesi još podataka za AI analizu." : "Add more data for AI analysis.");
-        return;
-      }
-      try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-        const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: `Analyze this budget for ${user.username}: Balance ${stats.balance} RSD, Total Earned ${stats.totalEarned}, Total Spent ${stats.totalSpent}. Provide one short, encouraging tip in ${lang === 'sr' ? 'Serbian' : 'English'}. (Max 15 words).`,
-        });
-        setAiInsight(response.text || '');
-      } catch (e) {
-        console.error("AI Insight failed", e);
-      }
-    };
-    const timer = setTimeout(fetchAiInsight, 2000);
-    return () => clearTimeout(timer);
-  }, [transactions.length, lang]);
 
   const handleAddTransaction = (data: { amount: number; description: string; goalId?: string }) => {
     const amountInBase = toBase(data.amount, currency);
@@ -134,16 +110,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, lang, setLang }) 
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-10 mt-6 sm:mt-10 space-y-6 sm:space-y-10">
-        
-        {/* AI ADVISOR BANNER */}
-        <div className="glass-card bg-gradient-to-r from-blue-900/20 to-indigo-900/10 border border-blue-500/20 rounded-2xl p-4 flex items-center gap-4 animate-pulse-slow">
-           <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 text-xl">✨</div>
-           <div>
-             <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest">Pocket AI Advisor</p>
-             <p className="text-xs sm:text-sm font-bold text-white/90 italic">"{aiInsight || 'Analiziram tvoj napredak...'}"</p>
-           </div>
-        </div>
-
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-8">
           <div className="lg:col-span-4 flex flex-col gap-5 sm:gap-8 min-h-[400px]">
             <div className="flex-1 glass-card rounded-2xl sm:rounded-[2.5rem] p-5 sm:p-7 relative overflow-hidden border border-white/20">
