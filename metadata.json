@@ -1,0 +1,5 @@
+{
+  "name": "PocketTracker",
+  "description": "A modern, responsive financial manager for tracking earnings, expenses, goals, and social financial stats.",
+  "requestFramePermissions": []
+}
