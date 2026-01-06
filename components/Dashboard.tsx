@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { CurrencyType, Transaction, Goal, RecurringPayment } from '../types';
 import { fromBase, toBase, formatCurrency } from '../utils/currency';
 import { translations, Language } from '../i18n';
@@ -9,6 +9,7 @@ import GoalForm from './GoalForm';
 import RecurringForm from './RecurringForm';
 import FriendTab from './FriendTab';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+import { GoogleGenAI } from "@google/genai";
 
 interface DashboardProps {
   user: { username: string };
@@ -32,25 +33,44 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, lang, setLang }) 
   const [showModal, setShowModal] = useState<'earn' | 'spend' | 'goal' | 'edit_goal' | 'edit_tx' | 'recurring' | null>(null);
   const [activeTxId, setActiveTxId] = useState<string | null>(null);
   const [activeGoalId, setActiveGoalId] = useState<string | null>(null);
+  const [aiInsight, setAiInsight] = useState<string>('');
 
   const stats = useMemo(() => {
     const totalEarned = transactions.filter(t => t.type === 'earn').reduce((acc, t) => acc + t.amount, 0);
     const totalSpent = transactions.filter(t => t.type === 'spend').reduce((acc, t) => acc + t.amount, 0);
     const balance = totalEarned - totalSpent;
-    
     const streak = transactions.length > 0 ? 7 : 0; 
-    
     const balanceInUSD = fromBase(balance, 'USD');
     const tierIndex = TIER_THRESHOLDS.findIndex(th => balanceInUSD < th);
     const currentTier = tierIndex === -1 ? 9 : Math.max(0, tierIndex);
     const nextThreshold = TIER_THRESHOLDS[currentTier] || TIER_THRESHOLDS[TIER_THRESHOLDS.length - 1];
     const prevThreshold = TIER_THRESHOLDS[currentTier - 1] || 0;
-    
     const progress = balanceInUSD <= prevThreshold ? 0 : Math.min(100, ((balanceInUSD - prevThreshold) / (nextThreshold - prevThreshold)) * 100);
     const rank = RANKS[Math.min(currentTier, RANKS.length - 1)];
-
     return { totalEarned, totalSpent, balance, streak, currentTier, progress, rank, nextThreshold };
   }, [transactions]);
+
+  // AI Insight Generator
+  useEffect(() => {
+    const fetchAiInsight = async () => {
+      if (transactions.length < 3) {
+        setAiInsight(lang === 'sr' ? "Unesi još podataka za AI analizu." : "Add more data for AI analysis.");
+        return;
+      }
+      try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+        const response = await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: `Analyze this budget for ${user.username}: Balance ${stats.balance} RSD, Total Earned ${stats.totalEarned}, Total Spent ${stats.totalSpent}. Provide one short, encouraging tip in ${lang === 'sr' ? 'Serbian' : 'English'}. (Max 15 words).`,
+        });
+        setAiInsight(response.text || '');
+      } catch (e) {
+        console.error("AI Insight failed", e);
+      }
+    };
+    const timer = setTimeout(fetchAiInsight, 2000);
+    return () => clearTimeout(timer);
+  }, [transactions.length, lang]);
 
   const handleAddTransaction = (data: { amount: number; description: string; goalId?: string }) => {
     const amountInBase = toBase(data.amount, currency);
@@ -86,7 +106,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, lang, setLang }) 
 
   return (
     <div className="min-h-screen pb-32">
-      {/* HEADER */}
       <header className="sticky top-0 z-50 bg-[#030612]/95 backdrop-blur-3xl border-b border-white/10 py-2.5 sm:py-4 px-4 sm:px-10 flex justify-between items-center shadow-lg">
         <div className="flex items-center gap-2.5">
            <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center font-black shadow-[0_5px_20px_rgba(59,130,246,0.3)] text-white text-[11px] sm:text-xl">P</div>
@@ -116,12 +135,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, lang, setLang }) 
 
       <main className="max-w-7xl mx-auto px-4 sm:px-10 mt-6 sm:mt-10 space-y-6 sm:space-y-10">
         
-        {/* HERO CARDS SECTION - UPDATED LAYOUT */}
+        {/* AI ADVISOR BANNER */}
+        <div className="glass-card bg-gradient-to-r from-blue-900/20 to-indigo-900/10 border border-blue-500/20 rounded-2xl p-4 flex items-center gap-4 animate-pulse-slow">
+           <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 text-xl">✨</div>
+           <div>
+             <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest">Pocket AI Advisor</p>
+             <p className="text-xs sm:text-sm font-bold text-white/90 italic">"{aiInsight || 'Analiziram tvoj napredak...'}"</p>
+           </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-8">
-          
-          {/* LEFT STACK (Balance + Tier) */}
           <div className="lg:col-span-4 flex flex-col gap-5 sm:gap-8 min-h-[400px]">
-            {/* BALANCE CARD */}
             <div className="flex-1 glass-card rounded-2xl sm:rounded-[2.5rem] p-5 sm:p-7 relative overflow-hidden border border-white/20">
                <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 via-indigo-500/5 to-transparent"></div>
                <div className="relative z-10 flex flex-col justify-between h-full">
@@ -150,7 +174,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, lang, setLang }) 
                </div>
             </div>
 
-            {/* TIER PROGRESS CARD */}
             <div className="flex-1 glass-card rounded-2xl sm:rounded-[2.5rem] p-5 sm:p-6 flex flex-col items-center justify-center text-center relative overflow-hidden">
                <p className="text-slate-500 text-[8px] sm:text-[9px] font-black uppercase mb-2 tracking-[0.3em]">{t.nextTier}</p>
                <div className="relative w-20 h-20 sm:w-28 sm:h-28 flex items-center justify-center p-2">
@@ -171,7 +194,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, lang, setLang }) 
             </div>
           </div>
 
-          {/* RIGHT CHART (Hourly Flow) - EXPANDED */}
           <div className="lg:col-span-8 glass-card rounded-2xl sm:rounded-[2.5rem] p-5 sm:p-8 min-h-[400px]">
              <h3 className="text-[9px] sm:text-[11px] font-black text-slate-400 uppercase tracking-widest mb-4">{t.distribution}</h3>
              <div className="h-[calc(100%-2rem)]">
@@ -180,7 +202,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, lang, setLang }) 
           </div>
         </div>
 
-        {/* CILJEVI & SUBS */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-5 sm:gap-8">
            <div className="md:col-span-8 space-y-4 sm:space-y-6">
               <div className="flex justify-between items-center px-2">
@@ -234,7 +255,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, lang, setLang }) 
            </div>
         </div>
 
-        {/* LOGS */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 sm:gap-10">
            <div className="md:col-span-4 h-[300px] sm:h-[400px]">
               <FriendTab lang={lang} />
@@ -270,27 +290,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, lang, setLang }) 
            </div>
         </div>
 
-        {/* PERFORMANCE */}
         <div className="glass-card rounded-[2.5rem] sm:rounded-[4rem] p-6 sm:p-10 h-[250px] sm:h-[400px]">
            <h3 className="text-[10px] sm:text-sm font-black text-slate-400 uppercase tracking-widest mb-8 sm:mb-12">{t.performance}</h3>
            <Visualizations transactions={transactions} currency={currency} type="weekly" />
         </div>
       </main>
 
-      {/* FLOATING ACTION DOCK */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-2.5rem)] sm:w-[calc(100%-5rem)] max-w-lg flex justify-center gap-4 sm:gap-8 z-[100]">
-        <button 
-          onClick={() => setShowModal('spend')} 
-          className="flex-1 min-w-0 bg-gradient-to-r from-rose-600 via-rose-500 to-rose-600 text-white font-black py-4 sm:py-7 rounded-[1.5rem] sm:rounded-[3rem] shadow-[0_20px_50px_rgba(244,63,94,0.35)] hover:scale-[1.03] active:scale-95 transition-all text-[10px] sm:text-sm uppercase tracking-[0.1em] sm:tracking-[0.2em] border-b-4 border-rose-900/30 truncate whitespace-nowrap px-4"
-        >
-          {t.addSpend}
-        </button>
-        <button 
-          onClick={() => setShowModal('earn')} 
-          className="flex-1 min-w-0 bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 text-white font-black py-4 sm:py-7 rounded-[1.5rem] sm:rounded-[3rem] shadow-[0_20px_50px_rgba(16,185,129,0.35)] hover:scale-[1.03] active:scale-95 transition-all text-[10px] sm:text-sm uppercase tracking-[0.1em] sm:tracking-[0.2em] border-b-4 border-emerald-900/30 truncate whitespace-nowrap px-4"
-        >
-          {t.addEarn}
-        </button>
+        <button onClick={() => setShowModal('spend')} className="flex-1 min-w-0 bg-gradient-to-r from-rose-600 via-rose-500 to-rose-600 text-white font-black py-4 sm:py-7 rounded-[1.5rem] sm:rounded-[3rem] shadow-[0_20px_50px_rgba(244,63,94,0.35)] hover:scale-[1.03] active:scale-95 transition-all text-[10px] sm:text-sm uppercase tracking-[0.1em] sm:tracking-[0.2em] border-b-4 border-rose-900/30 truncate px-4">{t.addSpend}</button>
+        <button onClick={() => setShowModal('earn')} className="flex-1 min-w-0 bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 text-white font-black py-4 sm:py-7 rounded-[1.5rem] sm:rounded-[3rem] shadow-[0_20px_50px_rgba(16,185,129,0.35)] hover:scale-[1.03] active:scale-95 transition-all text-[10px] sm:text-sm uppercase tracking-[0.1em] sm:tracking-[0.2em] border-b-4 border-emerald-900/30 truncate px-4">{t.addEarn}</button>
       </div>
 
       {showModal === 'recurring' && <RecurringForm currency={currency} lang={lang} onSubmit={handleAddRecurring} onClose={() => setShowModal(null)} />}
@@ -306,10 +314,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, lang, setLang }) 
         }} onClose={() => { setShowModal(null); setActiveGoalId(null); }} />
       )}
       {(showModal === 'earn' || showModal === 'spend' || showModal === 'edit_tx') && (
-        <TransactionForm 
-          type={showModal === 'edit_tx' ? (transactions.find(it => it.id === activeTxId)?.type || 'earn') : (showModal as 'earn' | 'spend')} 
-          currency={currency} lang={lang} goals={goals} onSubmit={handleAddTransaction} onClose={() => { setShowModal(null); setActiveTxId(null); }} 
-        />
+        <TransactionForm type={showModal === 'edit_tx' ? (transactions.find(it => it.id === activeTxId)?.type || 'earn') : (showModal as 'earn' | 'spend')} currency={currency} lang={lang} goals={goals} onSubmit={handleAddTransaction} onClose={() => { setShowModal(null); setActiveTxId(null); }} />
       )}
     </div>
   );
